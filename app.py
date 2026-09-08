@@ -179,10 +179,10 @@ with tabs[1]:
         st.markdown(f"**One-way ANOVA.** Sites show {sig_word(p)} difference in canopy height, "
                     f"{aov_line(aov, 'site')}.")
         st.markdown("**Tukey groups:** " + ", ".join(f"{s} ({r['letters'][s]})" for s in A.SITE_ORDER))
-        st.dataframe(aov.round(4), use_container_width=True)
-        st.dataframe(means_display(r["means"]), hide_index=True, use_container_width=True)
+        st.dataframe(aov.round(4), width="stretch")
+        st.dataframe(means_display(r["means"]), hide_index=True, width="stretch")
     with st.expander("Tukey HSD pairwise comparisons"):
-        st.dataframe(r["tukey"], hide_index=True, use_container_width=True)
+        st.dataframe(r["tukey"], hide_index=True, width="stretch")
 
 # ---- Tree density
 with tabs[2]:
@@ -197,11 +197,11 @@ with tabs[2]:
             p = aov.loc["site", "PR(>F)"]
             st.markdown(f"Sites show {sig_word(p)} difference, {aov_line(aov, 'site')}.")
             st.markdown("**Tukey groups:** " + ", ".join(f"{s} ({r['letters'][s]})" for s in A.SITE_ORDER))
-            st.dataframe(aov.round(4), use_container_width=True)
+            st.dataframe(aov.round(4), width="stretch")
         st.divider()
 
 
-def twoway_tab(key, ylabel, factor, title):
+def twoway_tab(key, ylabel, factor, title, factor_word):
     r = R[key]; aov = r["anova"]
     c1, c2 = st.columns([1.1, 1])
     with c1:
@@ -213,19 +213,37 @@ def twoway_tab(key, ylabel, factor, title):
             p = aov.loc[e, "PR(>F)"]
             st.markdown(f"- **{e}**: {sig_word(p)} effect, {aov_line(aov, e)}")
         st.markdown("**Tukey on site:** " + ", ".join(f"{s} ({r['letters_site'][s]})" for s in A.SITE_ORDER))
-        st.dataframe(aov.round(4), use_container_width=True)
+        st.dataframe(aov.round(4), width="stretch")
+
+    # --- the two levels compared within each site (paired) ---
+    se = r["simple"]; a, b = se.attrs.get("levels2", (factor_word, ""))
+    st.markdown(f"#### The two {factor_word} within each site")
+    st.caption(f"Each group measured both, so this compares {a} against {b} plot by plot at each "
+               f"community (a paired t-test). p (Holm) is adjusted for testing all four sites. "
+               f"With only 3 to 4 pairs per site the power is low, so read alongside the figure.")
+    disp = se.copy()
+    for cnum in [c for c in disp.columns if disp[c].dtype != object and c != "n pairs"]:
+        disp[cnum] = disp[cnum].round(3)
+    st.dataframe(disp, hide_index=True, width="stretch")
+    diff_sites = se.loc[se["sig"] == "yes", "site"].tolist()
+    if diff_sites:
+        st.markdown(f"**{a} and {b} differ significantly at:** " + ", ".join(diff_sites) +
+                    " (Holm adjusted p < 0.05).")
+    else:
+        st.markdown(f"**No site shows a significant {a} vs {b} difference** after adjusting for the four tests.")
+
     with st.expander("Means and 95% CI"):
-        st.dataframe(means_display(r["means"]), hide_index=True, use_container_width=True)
-    with st.expander("Tukey HSD on site"):
-        st.dataframe(r["tukey_site"], hide_index=True, use_container_width=True)
+        st.dataframe(means_display(r["means"]), hide_index=True, width="stretch")
+    with st.expander("Tukey HSD on site (pooled over " + factor_word + ")"):
+        st.dataframe(r["tukey_site"], hide_index=True, width="stretch")
 
 
 with tabs[3]:
-    twoway_tab("basal_area", "Basal area (m2/ha)", "method", "Live tree basal area, plot vs factor gauge")
+    twoway_tab("basal_area", "Basal area (m2/ha)", "method", "Live tree basal area, plot vs factor gauge", "methods")
 with tabs[4]:
-    twoway_tab("canopy_cover", "Canopy cover (%)", "method", "Canopy cover, line vs densiometer")
+    twoway_tab("canopy_cover", "Canopy cover (%)", "method", "Canopy cover, line vs densiometer", "methods")
 with tabs[5]:
-    twoway_tab("shrub_cover", "Shrub cover (%)", "method", "Shrub cover, line vs subplot")
+    twoway_tab("shrub_cover", "Shrub cover (%)", "method", "Shrub cover, line vs subplot", "methods")
 
 # ---- Ground cover
 with tabs[6]:
@@ -237,13 +255,13 @@ with tabs[6]:
     piv = sub.pivot_table(index="category", columns="site", values="mean").reindex(A.GC_CATS)[A.SITE_ORDER]
     pci = sub.pivot_table(index="category", columns="site", values="ci95").reindex(A.GC_CATS)[A.SITE_ORDER]
     disp = piv.round(1).astype(str) + " (±" + pci.round(1).astype(str) + ")"
-    st.dataframe(disp, use_container_width=True)
+    st.dataframe(disp, width="stretch")
     st.pyplot(fig_stacked(piv.fillna(0), "% cover", f"Ground cover composition, {meth}"))
 
 # ---- Species richness
 with tabs[7]:
     twoway_tab("species_richness", "Species richness (per 0.04 ha)", "class",
-               "Species richness, trees vs shrubs")
+               "Species richness, trees vs shrubs", "classes")
     st.caption("Watch the interaction term: trees dominate richness in the forests while shrubs "
                "dominate in the heath, which is the crossover the two-way test picks up.")
 
@@ -253,4 +271,4 @@ with tabs[8]:
                 "Top eight species with the rest grouped as Other. No statistical test.")
     rd = R["relative_dominance"]
     st.pyplot(fig_stacked(rd, "% of basal area", "Relative tree dominance", percent=True))
-    st.dataframe(rd.round(1), use_container_width=True)
+    st.dataframe(rd.round(1), width="stretch")

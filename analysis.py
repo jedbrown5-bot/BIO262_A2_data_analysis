@@ -198,6 +198,59 @@ def oneway(df, factor="site", order=None):
     return res
 
 
+def _holm(pvals):
+    """Holm-Bonferroni adjusted p-values, preserving input order."""
+    idx = np.argsort(pvals)
+    m = len(pvals)
+    adj = np.empty(m)
+    running = 0.0
+    for rank, i in enumerate(idx):
+        val = (m - rank) * pvals[i]
+        running = max(running, val)
+        adj[i] = min(running, 1.0)
+    return adj
+
+
+def simple_effects(df, f1="site", f2="method", order1=None, order2=None):
+    """
+    Compare the two levels of f2 within each level of f1, paired by group.
+    Each group measured both levels, so this is a paired (repeated measures) test.
+    Returns a tidy DataFrame: one row per f1 level.
+    """
+    d = df.dropna(subset=["value"]).copy()
+    d[f1] = d[f1].astype(str); d[f2] = d[f2].astype(str)
+    levels1 = order1 or list(dict.fromkeys(d[f1]))
+    levels2 = order2 or list(dict.fromkeys(d[f2]))
+    a, b = levels2[0], levels2[1]
+    rows = []
+    for lv in levels1:
+        sub = d[d[f1] == lv]
+        wide = sub.pivot_table(index="group", columns=f2, values="value")
+        if a not in wide or b not in wide:
+            continue
+        pair = wide[[a, b]].dropna()
+        n = len(pair)
+        rec = {f1: lv, f"{a} mean": pair[a].mean() if n else np.nan,
+               f"{b} mean": pair[b].mean() if n else np.nan,
+               "mean diff": (pair[a] - pair[b]).mean() if n else np.nan,
+               "n pairs": n}
+        if n >= 2 and (pair[a] - pair[b]).std(ddof=1) > 0:
+            t, p = stats.ttest_rel(pair[a], pair[b])
+            rec["t"] = t; rec["df"] = n - 1; rec["p"] = p
+        else:
+            rec["t"] = np.nan; rec["df"] = max(n - 1, 0)
+            rec["p"] = np.nan if n < 2 else 1.0  # identical or single pair
+        rows.append(rec)
+    out = pd.DataFrame(rows)
+    valid = out["p"].notna()
+    out["p (Holm)"] = np.nan
+    if valid.any():
+        out.loc[valid, "p (Holm)"] = _holm(out.loc[valid, "p"].values)
+    out["sig"] = np.where(out["p (Holm)"] < 0.05, "yes", "no")
+    out.attrs["levels2"] = (a, b)
+    return out
+
+
 def twoway(df, f1="site", f2="method", order1=None):
     """Two-way ANOVA with interaction. Tukey on f1 as a follow-up."""
     d = df.dropna(subset=["value"]).copy()
@@ -208,7 +261,8 @@ def twoway(df, f1="site", f2="method", order1=None):
         index={"C(A)": f1, "C(B)": f2, "C(A):C(B)": f"{f1} x {f2}"})
     levels = order1 or list(dict.fromkeys(d[f1]))
     res = {"anova": aov, "model": model, "levels": levels,
-           "means": mean_ci_table(d, [f1, f2]), "f2_levels": list(dict.fromkeys(d[f2]))}
+           "means": mean_ci_table(d, [f1, f2]), "f2_levels": list(dict.fromkeys(d[f2])),
+           "simple": simple_effects(df, f1, f2, order1, list(dict.fromkeys(d[f2]))), "factor2": f2}
     # Tukey on site (main effect follow-up)
     try:
         tuk = pairwise_tukeyhsd(d["value"], d[f1])

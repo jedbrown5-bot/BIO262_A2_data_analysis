@@ -17,6 +17,8 @@ A small Streamlit app that runs every statistical test the assessment requires o
 
 Each of the four groups at a site is treated as a replicate plot, so n = 4, or 3 where a value is missing (canopy height at Littoral Rainforest group 2, shrub cover line intercept at Wet Sclerophyll group 2). The two-way models treat the second factor as crossed with site and include the interaction. Letters above bars are a compact letter display from Tukey HSD, communities that share a letter are not significantly different at p = 0.05.
 
+Each two-way tab also has a "two methods within each site" panel. Because the same group measured both methods, this compares them plot by plot at each community with a paired t-test, and adjusts across the four sites with Holm. This is the analysis to use when you want to know where the two methods actually disagree, which the overall two-way ANOVA does not tell you directly. The method main effect in the ANOVA has only two levels, so it needs no Tukey, the F test is already the comparison. Tukey is shown only for site, which has four levels.
+
 ## How to run
 
 You need Python 3.9 or later.
