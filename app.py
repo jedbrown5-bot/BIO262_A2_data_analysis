@@ -47,6 +47,48 @@ def sig_word(p):
     return "a significant" if p < 0.05 else "no significant"
 
 
+def fmtp(p):
+    try:
+        return "< 0.001" if p < 0.001 else f"{p:.3f}"
+    except Exception:
+        return "n/a"
+
+
+def assumption_block(res, is_two):
+    a = res.get("assump", {})
+    sh = a.get("shapiro", {}); lv = a.get("levene", {})
+    with st.expander("Assumptions and non-parametric alternative"):
+        if "p" in sh:
+            ok = sh["p"] >= 0.05
+            st.markdown(f"- **Normality of residuals (Shapiro-Wilk):** W = {sh['stat']:.3f}, "
+                        f"p = {fmtp(sh['p'])}. " +
+                        ("Residuals are consistent with a normal distribution." if ok
+                         else "Normality is doubtful, the residuals depart from normal."))
+        if "p" in lv:
+            ok = lv["p"] >= 0.05
+            st.markdown(f"- **Equal variance (Levene):** stat = {lv['stat']:.3f}, p = {fmtp(lv['p'])}. " +
+                        ("Variances look homogeneous across groups." if ok
+                         else "Variances differ across groups."))
+        if is_two:
+            st.markdown("**Non-parametric alternative, Scheirer-Ray-Hare** (ranks the data, then a "
+                        "two-way decomposition against chi-square):")
+            st.dataframe(res["srh"].round(4), hide_index=True, width="stretch")
+        else:
+            kw = a.get("kruskal", {})
+            if "p" in kw:
+                st.markdown(f"**Non-parametric alternative, Kruskal-Wallis:** H = {kw['stat']:.3f}, "
+                            f"df = {kw['df']}, p = {fmtp(kw['p'])}.")
+        bad = (sh.get("p", 1) < 0.05) or (lv.get("p", 1) < 0.05)
+        alt = "Scheirer-Ray-Hare" if is_two else "Kruskal-Wallis"
+        if bad:
+            st.info(f"At least one assumption is questionable here. Lean on the {alt} result, or try a "
+                    "transformation such as log or square root before the ANOVA. With only 3 to 4 "
+                    "replicates per group these assumption tests are themselves low powered, so use "
+                    "judgement and look at the figure.")
+        else:
+            st.caption(f"Assumptions look acceptable, so the ANOVA is appropriate. {alt} is shown for comparison.")
+
+
 # ---------- figures ----------
 def fig_oneway(means, letters, ylabel, title):
     order = A.SITE_ORDER
@@ -183,6 +225,7 @@ with tabs[1]:
         st.dataframe(means_display(r["means"]), hide_index=True, width="stretch")
     with st.expander("Tukey HSD pairwise comparisons"):
         st.dataframe(r["tukey"], hide_index=True, width="stretch")
+    assumption_block(r, is_two=False)
 
 # ---- Tree density
 with tabs[2]:
@@ -198,6 +241,7 @@ with tabs[2]:
             st.markdown(f"Sites show {sig_word(p)} difference, {aov_line(aov, 'site')}.")
             st.markdown("**Tukey groups:** " + ", ".join(f"{s} ({r['letters'][s]})" for s in A.SITE_ORDER))
             st.dataframe(aov.round(4), width="stretch")
+        assumption_block(r, is_two=False)
         st.divider()
 
 
@@ -219,8 +263,10 @@ def twoway_tab(key, ylabel, factor, title, factor_word):
     se = r["simple"]; a, b = se.attrs.get("levels2", (factor_word, ""))
     st.markdown(f"#### The two {factor_word} within each site")
     st.caption(f"Each group measured both, so this compares {a} against {b} plot by plot at each "
-               f"community (a paired t-test). p (Holm) is adjusted for testing all four sites. "
-               f"With only 3 to 4 pairs per site the power is low, so read alongside the figure.")
+               f"community (a paired t-test, with Wilcoxon signed-rank as the non-parametric "
+               f"alternative). p (Holm) is adjusted for testing all four sites. With only 3 to 4 "
+               f"pairs per site the power is low, and Wilcoxon cannot go below 0.125 with four pairs, "
+               f"so read these alongside the figure.")
     disp = se.copy()
     for cnum in [c for c in disp.columns if disp[c].dtype != object and c != "n pairs"]:
         disp[cnum] = disp[cnum].round(3)
@@ -236,6 +282,7 @@ def twoway_tab(key, ylabel, factor, title, factor_word):
         st.dataframe(means_display(r["means"]), hide_index=True, width="stretch")
     with st.expander("Tukey HSD on site (pooled over " + factor_word + ")"):
         st.dataframe(r["tukey_site"], hide_index=True, width="stretch")
+    assumption_block(r, is_two=True)
 
 
 with tabs[3]:

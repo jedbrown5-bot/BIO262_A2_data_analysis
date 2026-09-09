@@ -41,6 +41,17 @@ It opens in your browser. The bundled class dataset loads by default. To analyse
 - data/PMQ_combined_data_2026.xlsx, the compiled class data used by default.
 - requirements.txt, the packages needed.
 
+## Assumptions and alternatives
+
+Every ANOVA tab has an "Assumptions and non-parametric alternative" panel:
+
+- **Normality of residuals**, Shapiro-Wilk on the model residuals.
+- **Equal variance**, Levene's test across the groups or cells.
+- **A non-parametric alternative** you can fall back on if an assumption fails: Kruskal-Wallis for the one-way tests, and the Scheirer-Ray-Hare test (a rank-based two-way test) for the two-way tests.
+- The paired per-site method comparison also reports a Wilcoxon signed-rank p as its non-parametric alternative.
+
+If an assumption looks shaky, the panel says so and points you to the alternative test or a transformation (log or square root). Keep in mind that with only three or four replicates per group both the assumption tests and the non-parametric tests are low powered. In particular a Wilcoxon signed-rank test on four pairs cannot return a p below 0.125, so it will never reach significance at 0.05 here. Read the tests alongside the figures rather than on their own.
+
 ## Notes on the statistics
 
 The confidence intervals are t times the standard error, with t depending on n. The two-way ANOVA uses Type II sums of squares, which handles the two missing values without trouble. Because the same group is measured by both methods, the method comparison is really a paired design, so the two-way ANOVA is a slight simplification, but it is the analysis the assessment asks for at this level. The Tukey follow-up on site is provided for the two-way tests as a guide to which communities differ.

@@ -175,12 +175,19 @@ def oneway(df, factor="site", order=None):
     """One-way ANOVA + Tukey + compact letters. Returns dict."""
     d = df.dropna(subset=["value"]).copy()
     d[factor] = d[factor].astype(str)
-    d = d.rename(columns={factor: "A", "value": "y"})
-    model = ols("y ~ C(A)", data=d).fit()
+    dm = d.rename(columns={factor: "A", "value": "y"})
+    model = ols("y ~ C(A)", data=dm).fit()
     aov = sm.stats.anova_lm(model, typ=2).rename(index={"C(A)": factor})
-    d = d.rename(columns={"A": factor, "y": "value"})
     levels = order or list(dict.fromkeys(d[factor]))
-    res = {"anova": aov, "levels": levels}
+    # assumptions + non-parametric alternative (Kruskal-Wallis)
+    assump = check_assumptions(model, d, factor)
+    try:
+        groups = [g["value"].values for _, g in d.groupby(factor)]
+        h, kp = stats.kruskal(*groups)
+        assump["kruskal"] = {"stat": float(h), "df": len(groups) - 1, "p": float(kp)}
+    except Exception as e:
+        assump["kruskal"] = {"error": str(e)}
+    res = {"anova": aov, "levels": levels, "assump": assump}
     # Tukey
     try:
         tuk = pairwise_tukeyhsd(d["value"], d[factor])
@@ -196,6 +203,47 @@ def oneway(df, factor="site", order=None):
         res["tukey_error"] = str(e)
     res["means"] = mean_ci_table(d, [factor])
     return res
+
+
+def check_assumptions(model, d, groupcols):
+    """Shapiro-Wilk on residuals (normality) and Levene across cells (equal variance)."""
+    out = {}
+    resid = np.asarray(model.resid)
+    try:
+        w, p = stats.shapiro(resid)
+        out["shapiro"] = {"stat": float(w), "p": float(p), "n": len(resid)}
+    except Exception as e:
+        out["shapiro"] = {"error": str(e)}
+    try:
+        groups = [g["value"].values for _, g in d.groupby(groupcols)]
+        groups = [g for g in groups if len(g) > 1]
+        s, p = stats.levene(*groups, center="median")
+        out["levene"] = {"stat": float(s), "p": float(p), "k": len(groups)}
+    except Exception as e:
+        out["levene"] = {"error": str(e)}
+    return out
+
+
+def scheirer_ray_hare(df, f1, f2):
+    """Non-parametric two-way test (Scheirer-Ray-Hare). Ranks the data, then an
+    ANOVA-style decomposition, comparing each H to chi-square. A rank-based
+    alternative when normality or equal variance fail."""
+    d = df.dropna(subset=["value"]).copy()
+    d[f1] = d[f1].astype(str); d[f2] = d[f2].astype(str)
+    dm = d.rename(columns={f1: "A", f2: "B"})
+    dm["R"] = stats.rankdata(dm["value"])
+    model = ols("R ~ C(A) * C(B)", data=dm).fit()
+    aov = sm.stats.anova_lm(model, typ=2)
+    ss_total = ((dm["R"] - dm["R"].mean()) ** 2).sum()
+    ms_total = ss_total / (len(dm) - 1)
+    rows = []
+    label = {"C(A)": f1, "C(B)": f2, "C(A):C(B)": f"{f1} x {f2}"}
+    for term in ["C(A)", "C(B)", "C(A):C(B)"]:
+        ss = aov.loc[term, "sum_sq"]; dfree = int(aov.loc[term, "df"])
+        H = ss / ms_total
+        p = stats.chi2.sf(H, dfree)
+        rows.append({"effect": label[term], "H": H, "df": dfree, "p": p})
+    return pd.DataFrame(rows)
 
 
 def _holm(pvals):
@@ -240,6 +288,12 @@ def simple_effects(df, f1="site", f2="method", order1=None, order2=None):
         else:
             rec["t"] = np.nan; rec["df"] = max(n - 1, 0)
             rec["p"] = np.nan if n < 2 else 1.0  # identical or single pair
+        # non-parametric alternative: Wilcoxon signed-rank on the paired differences
+        try:
+            _, wp = stats.wilcoxon(pair[a], pair[b])
+            rec["p (Wilcoxon)"] = float(wp)
+        except Exception:
+            rec["p (Wilcoxon)"] = np.nan
         rows.append(rec)
     out = pd.DataFrame(rows)
     valid = out["p"].notna()
@@ -260,9 +314,11 @@ def twoway(df, f1="site", f2="method", order1=None):
     aov = sm.stats.anova_lm(model, typ=2).rename(
         index={"C(A)": f1, "C(B)": f2, "C(A):C(B)": f"{f1} x {f2}"})
     levels = order1 or list(dict.fromkeys(d[f1]))
+    assump = check_assumptions(model, d, [f1, f2])
     res = {"anova": aov, "model": model, "levels": levels,
            "means": mean_ci_table(d, [f1, f2]), "f2_levels": list(dict.fromkeys(d[f2])),
-           "simple": simple_effects(df, f1, f2, order1, list(dict.fromkeys(d[f2]))), "factor2": f2}
+           "simple": simple_effects(df, f1, f2, order1, list(dict.fromkeys(d[f2]))), "factor2": f2,
+           "assump": assump, "srh": scheirer_ray_hare(df, f1, f2)}
     # Tukey on site (main effect follow-up)
     try:
         tuk = pairwise_tukeyhsd(d["value"], d[f1])
