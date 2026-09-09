@@ -187,6 +187,10 @@ def oneway(df, factor="site", order=None):
         assump["kruskal"] = {"stat": float(h), "df": len(groups) - 1, "p": float(kp)}
     except Exception as e:
         assump["kruskal"] = {"error": str(e)}
+    try:
+        assump["dunn"] = dunn_test(d, factor, levels)
+    except Exception as e:
+        assump["dunn"] = {"error": str(e)}
     res = {"anova": aov, "levels": levels, "assump": assump}
     # Tukey
     try:
@@ -244,6 +248,40 @@ def scheirer_ray_hare(df, f1, f2):
         p = stats.chi2.sf(H, dfree)
         rows.append({"effect": label[term], "H": H, "df": dfree, "p": p})
     return pd.DataFrame(rows)
+
+
+def dunn_test(df, factor="site", order=None):
+    """Dunn's test, the non-parametric post-hoc after Kruskal-Wallis. Pairwise
+    comparisons on rank sums with a tie correction, Holm adjusted, plus letters.
+    This is the rank-based counterpart to Tukey HSD."""
+    d = df.dropna(subset=["value"]).copy()
+    d[factor] = d[factor].astype(str)
+    levels = order or list(dict.fromkeys(d[factor]))
+    levels = [lv for lv in levels if lv in set(d[factor])]
+    N = len(d)
+    d = d.assign(_r=stats.rankdata(d["value"].values))
+    n = d.groupby(factor)["_r"].size()
+    rbar = d.groupby(factor)["_r"].mean()
+    # tie correction
+    _, counts = np.unique(d["value"].values, return_counts=True)
+    tie = np.sum(counts ** 3 - counts)
+    sigma2 = (N * (N + 1) / 12.0) - tie / (12.0 * (N - 1))
+    rows = []
+    for i in range(len(levels)):
+        for j in range(i + 1, len(levels)):
+            a, b = levels[i], levels[j]
+            se = np.sqrt(sigma2 * (1.0 / n[a] + 1.0 / n[b]))
+            z = (rbar[a] - rbar[b]) / se if se > 0 else 0.0
+            p = 2 * stats.norm.sf(abs(z))
+            rows.append({"group1": a, "group2": b, "z": z, "p": p})
+    tab = pd.DataFrame(rows)
+    if len(tab):
+        tab["p (Holm)"] = _holm(tab["p"].values)
+        reject = {(r["group1"], r["group2"]): bool(r["p (Holm)"] < 0.05) for _, r in tab.iterrows()}
+    else:
+        reject = {}
+    letters = compact_letters(levels, reject)
+    return {"table": tab, "letters": letters}
 
 
 def _holm(pvals):

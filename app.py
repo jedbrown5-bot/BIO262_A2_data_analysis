@@ -78,6 +78,13 @@ def assumption_block(res, is_two):
             if "p" in kw:
                 st.markdown(f"**Non-parametric alternative, Kruskal-Wallis:** H = {kw['stat']:.3f}, "
                             f"df = {kw['df']}, p = {fmtp(kw['p'])}.")
+            dn = a.get("dunn", {})
+            if isinstance(dn, dict) and "letters" in dn:
+                st.markdown("**Dunn's test (Holm), the non-parametric post-hoc (the rank-based "
+                            "counterpart to Tukey):** " +
+                            ", ".join(f"{s} ({dn['letters'].get(s, '')})" for s in A.SITE_ORDER
+                                      if s in dn["letters"]))
+                st.dataframe(dn["table"].round(4), hide_index=True, width="stretch")
         bad = (sh.get("p", 1) < 0.05) or (lv.get("p", 1) < 0.05)
         alt = "Scheirer-Ray-Hare" if is_two else "Kruskal-Wallis"
         if bad:
@@ -241,6 +248,8 @@ with tabs[2]:
             st.markdown(f"Sites show {sig_word(p)} difference, {aov_line(aov, 'site')}.")
             st.markdown("**Tukey groups:** " + ", ".join(f"{s} ({r['letters'][s]})" for s in A.SITE_ORDER))
             st.dataframe(aov.round(4), width="stretch")
+        with st.expander(f"Tukey HSD pairwise comparisons, {cls}"):
+            st.dataframe(r["tukey"], hide_index=True, width="stretch")
         assumption_block(r, is_two=False)
         st.divider()
 
