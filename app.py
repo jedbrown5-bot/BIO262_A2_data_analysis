@@ -210,42 +210,19 @@ with tabs[2]:
 
 
 def twoway_tab(key, ylabel, factor, title, factor_word):
+    """Two-way ANOVA only. Used where both factors are genuinely needed (species richness)."""
     r = R[key]; aov = r["anova"]
     c1, c2 = st.columns([1.1, 1])
     with c1:
         st.pyplot(fig_twoway(r["means"], factor, ylabel, title, grey=GREY))
     with c2:
-        eff = [i for i in aov.index if i != "Residual"]
         st.markdown("**Two-way ANOVA**")
-        for e in eff:
+        for e in [i for i in aov.index if i != "Residual"]:
             p = aov.loc[e, "PR(>F)"]
             st.markdown(f"- **{e}**: {sig_word(p)} effect, {aov_line(aov, e)}")
-        st.markdown("**Tukey on site:** " + ", ".join(f"{s} ({r['letters_site'][s]})" for s in A.SITE_ORDER))
         st.dataframe(aov.round(4), width="stretch")
-
-    # --- the two levels compared within each site (paired) ---
-    se = r["simple"]; a, b = se.attrs.get("levels2", (factor_word, ""))
-    st.markdown(f"#### The two {factor_word} within each site")
-    st.caption(f"Each group measured both, so this compares {a} against {b} plot by plot at each "
-               f"community (a paired t-test, with Wilcoxon signed-rank as the non-parametric "
-               f"alternative). p (Holm) is adjusted for testing all four sites. With only 3 to 4 "
-               f"pairs per site the power is low, and Wilcoxon cannot go below 0.125 with four pairs, "
-               f"so read these alongside the figure.")
-    disp = se.copy()
-    for cnum in [c for c in disp.columns if disp[c].dtype != object and c != "n pairs"]:
-        disp[cnum] = disp[cnum].round(3)
-    st.dataframe(disp, hide_index=True, width="stretch")
-    diff_sites = se.loc[se["sig"] == "yes", "site"].tolist()
-    if diff_sites:
-        st.markdown(f"**{a} and {b} differ significantly at:** " + ", ".join(diff_sites) +
-                    " (Holm adjusted p < 0.05).")
-    else:
-        st.markdown(f"**No site shows a significant {a} vs {b} difference** after adjusting for the four tests.")
-
     with st.expander("Means and 95% CI"):
         st.dataframe(means_display(r["means"]), hide_index=True, width="stretch")
-    with st.expander("Tukey HSD on site (pooled over " + factor_word + ")"):
-        st.dataframe(r["tukey_site"], hide_index=True, width="stretch")
     assumption_block(r, is_two=True)
 
 
@@ -275,11 +252,7 @@ def method_tab(key, ylabel, title):
         st.dataframe(site["tukey"], hide_index=True, width="stretch")
     with st.expander("Means and 95% CI (per site and method)"):
         st.dataframe(means_display(r["means"]), hide_index=True, width="stretch")
-    with st.expander("Reference: two-way ANOVA (site x method) and per-site comparison"):
-        st.dataframe(r["anova"].round(4), width="stretch")
-        st.caption("The two-way model treats the paired measurements as independent, which is why the "
-                   "paired t-test above is preferred for the method comparison. Per-site breakdown:")
-        st.dataframe(r["simple"].round(3), hide_index=True, width="stretch")
+    assumption_block(site, is_two=False)
 
 
 with tabs[3]:

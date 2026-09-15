@@ -148,19 +148,7 @@ def _twoway_section(title, res, ylabel, factor, factor_word, grey=False):
         p = aov.loc[e, "PR(>F)"]
         parts.append(f'<div class="result">{e}: '
                      f'{"significant" if p < 0.05 else "not significant"}, {_aov_line(aov, e)}</div>')
-    parts.append('<div class="result"><b>Tukey on site (pooled over ' + factor_word + '):</b> '
-                 + ", ".join(f"{s} ({res['letters_site'][s]})" for s in A.SITE_ORDER) + "</div>")
     parts.append(_aov_tbl(aov))
-    # per-site paired comparison
-    se = res["simple"]; a, b = se.attrs.get("levels2", ("", ""))
-    parts.append(f"<h3>The two {factor_word} within each site (paired)</h3>")
-    parts.append(f'<div class="muted">{a} vs {b}, paired by group. p (Holm) adjusts across the four '
-                 "sites, Wilcoxon is the non-parametric alternative.</div>")
-    parts.append(_tbl(se))
-    diff = se.loc[se["sig"] == "yes", "site"].tolist()
-    parts.append('<div class="result">' + (f"<b>{a} and {b} differ at:</b> " + ", ".join(diff)
-                 if diff else f"<b>No site shows a significant {a} vs {b} difference</b> after adjustment.")
-                 + "</div>")
     parts.append("<h3>Means and 95% CI</h3>" + _means_tbl(res["means"]))
     parts.append(_assump_html(res, is_two=True))
     return "\n".join(parts)
