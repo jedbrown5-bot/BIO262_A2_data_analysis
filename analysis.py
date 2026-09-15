@@ -124,10 +124,13 @@ def tidy_all(wb):
     ws = wb["Tree Species Composition"]; hr = _find_header_row(ws)
     hdr, rows = _rows(ws, hr)
     si = hdr.index("Site"); spi = hdr.index("Species"); bai = hdr.index("BA (m2)")
+    mi = hdr.index("Maximum DBH (cm)") if "Maximum DBH (cm)" in hdr else None
     recs = []
     for r in rows:
         if r[spi] and isinstance(r[bai], (int, float)):
-            recs.append({"site": SITES[r[si]], "species": str(r[spi]).strip(), "ba": r[bai]})
+            md = r[mi] if (mi is not None and isinstance(r[mi], (int, float))) else np.nan
+            recs.append({"site": SITES[r[si]], "species": str(r[spi]).strip(),
+                         "ba": r[bai], "maxdbh": md})
     out["tree_comp"] = pd.DataFrame(recs)
     return out
 
@@ -343,6 +346,40 @@ def simple_effects(df, f1="site", f2="method", order1=None, order2=None):
     return out
 
 
+def method_combo(df, f1="site", f2="method", order1=None, order2=None):
+    """The teaching approach for a two-method figure: a one-way ANOVA across sites
+    on the mean of the two methods per plot, plus a paired t-test comparing the two
+    methods pooled across all plots (Wilcoxon as the non-parametric alternative)."""
+    d = df.dropna(subset=["value"]).copy()
+    d[f1] = d[f1].astype(str); d[f2] = d[f2].astype(str)
+    levels2 = order2 or list(dict.fromkeys(d[f2]))
+    a, b = levels2[0], levels2[1]
+    wide = d.pivot_table(index=[f1, "group"], columns=f2, values="value", aggfunc="mean")
+    # one-way ANOVA across sites on the per-plot method-average
+    avg = wide.mean(axis=1).reset_index()
+    avg.columns = [f1, "group", "value"]
+    site = oneway(avg[[f1, "value"]], factor=f1, order=order1)
+    # paired t-test comparing the two methods, plots with both present
+    pair = wide[[a, b]].dropna()
+    n = len(pair); diffs = pair[a] - pair[b]
+    rec = {"level_a": a, "level_b": b, "mean_a": float(pair[a].mean()),
+           "mean_b": float(pair[b].mean()), "mean_diff": float(diffs.mean()), "n": n}
+    if n >= 2 and diffs.std(ddof=1) > 0:
+        t, p = stats.ttest_rel(pair[a], pair[b])
+        rec["t"] = float(t); rec["df"] = n - 1; rec["p"] = float(p)
+    else:
+        rec["t"] = np.nan; rec["df"] = max(n - 1, 0); rec["p"] = np.nan
+    try:
+        rec["shapiro_p"] = float(stats.shapiro(diffs)[1])
+    except Exception:
+        rec["shapiro_p"] = np.nan
+    try:
+        rec["wilcoxon_p"] = float(stats.wilcoxon(pair[a], pair[b])[1])
+    except Exception:
+        rec["wilcoxon_p"] = np.nan
+    return {"site": site, "paired": rec, "means": mean_ci_table(d, [f1, f2]), "f2_levels": [a, b]}
+
+
 def twoway(df, f1="site", f2="method", order1=None):
     """Two-way ANOVA with interaction. Tukey on f1 as a follow-up."""
     d = df.dropna(subset=["value"]).copy()
@@ -357,6 +394,8 @@ def twoway(df, f1="site", f2="method", order1=None):
            "means": mean_ci_table(d, [f1, f2]), "f2_levels": list(dict.fromkeys(d[f2])),
            "simple": simple_effects(df, f1, f2, order1, list(dict.fromkeys(d[f2]))), "factor2": f2,
            "assump": assump, "srh": scheirer_ray_hare(df, f1, f2)}
+    if f2 == "method":   # add the one-way ANOVA + paired t-test teaching approach
+        res["combo"] = method_combo(df, f1, f2, order1, list(dict.fromkeys(d[f2])))
     # Tukey on site (main effect follow-up)
     try:
         tuk = pairwise_tukeyhsd(d["value"], d[f1])
@@ -376,9 +415,12 @@ def ground_cover_table(gc):
     return tbl
 
 
-def relative_dominance(tree_comp, top_n=8):
-    """Do_rel: species share of total plot basal area per site. Top N species + Other."""
+def relative_dominance(tree_comp, top_n=8, min_dbh=1.0):
+    """Do_rel: species share of total plot basal area per site. Top N species + Other.
+    Restricted to trees >= min_dbh (cm), as the assessment specifies (1.0 cm)."""
     df = tree_comp.copy()
+    if "maxdbh" in df.columns:
+        df = df[(df["maxdbh"].isna()) | (df["maxdbh"] >= min_dbh)]
     site_tot = df.groupby("site")["ba"].sum()
     sp_tot = df.groupby(["site", "species"])["ba"].sum().reset_index()
     sp_tot["dorel"] = sp_tot.apply(lambda r: 100 * r["ba"] / site_tot[r["site"]] if site_tot[r["site"]] else 0, axis=1)

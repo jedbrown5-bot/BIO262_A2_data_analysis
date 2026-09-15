@@ -8,14 +8,16 @@ A small Streamlit app that runs every statistical test the assessment requires o
 |---|---|---|
 | Canopy height | One-way ANOVA, Tukey post-hoc with letters | Site |
 | Tree density | One-way ANOVA per size class | Site, each size class separately |
-| Basal area | Two-way ANOVA | Site by Method (Plot, Factor Gauge) |
-| Canopy cover | Two-way ANOVA | Site by Method (Line, Densiometer) |
-| Shrub cover | Two-way ANOVA | Site by Method (Line, Subplot) |
+| Basal area | One-way ANOVA (sites) + paired t-test (methods) | Site, then Plot vs Factor Gauge |
+| Canopy cover | One-way ANOVA (sites) + paired t-test (methods) | Site, then Line vs Densiometer |
+| Shrub cover | One-way ANOVA (sites) + paired t-test (methods) | Site, then Line vs Subplot |
 | Species richness | Two-way ANOVA | Site by Class (Trees, Shrubs) |
 | Ground cover | Means and 95% CI table, no test | Site by Method |
-| Relative dominance | Stacked composition, no test | Site by Species |
+| Relative dominance | Stacked composition, no test | Site by Species, trees >= 1.0 cm DBH |
 
 Each of the four groups at a site is treated as a replicate plot, so n = 4, or 3 where a value is missing (canopy height at Littoral Rainforest group 2, shrub cover line intercept at Wet Sclerophyll group 2). The two-way models treat the second factor as crossed with site and include the interaction. Letters above bars are a compact letter display from Tukey HSD, communities that share a letter are not significantly different at p = 0.05.
+
+Basal area, canopy cover and shrub cover are analysed as a one-way ANOVA comparing the sites (on the mean of the two methods per plot) plus a paired t-test comparing the two methods pooled across sites, since the two methods are measured on the same plot. The two-way ANOVA is kept in a reference panel on each of those tabs. Species richness stays a two-way ANOVA because trees versus shrubs is not a method comparison and the interaction is the point.
 
 Each two-way tab also has a "two methods within each site" panel. Because the same group measured both methods, this compares them plot by plot at each community with a paired t-test, and adjusts across the four sites with Holm. This is the analysis to use when you want to know where the two methods actually disagree, which the overall two-way ANOVA does not tell you directly. The method main effect in the ANOVA has only two levels, so it needs no Tukey, the F test is already the comparison. Tukey is shown only for site, which has four levels.
 
@@ -40,6 +42,14 @@ It opens in your browser. The bundled class dataset loads by default. To analyse
 - analysis.py, the data loading and all the statistics. You can import this on its own if you want the numbers without the app.
 - data/PMQ_combined_data_2026.xlsx, the compiled class data used by default.
 - requirements.txt, the packages needed.
+
+## Exporting the results
+
+There is a "Greyscale figures (report style)" checkbox in the sidebar. Tick it for greyscale, colourblind-safe figures that follow the scientific formatting rules for a written report, on screen and in the downloaded report. Leave it unticked for colour on screen. The ground cover table in the report is always in scientific style, caption above and no vertical rules.
+
+The Overview tab has two download buttons. "Download all ANOVA tables (CSV)" gives you just the ANOVA tables. "Download full report (HTML)" gives you a complete report, every figure, ANOVA table, post-hoc, per-site method comparison, assumption check, ground cover table and relative dominance, in one self-contained file. Open it in a browser and use Print, then Save as PDF, for a clean PDF. You can also generate it from the command line without the app:
+
+    python report.py data/PMQ_combined_data_2026.xlsx report.html
 
 ## Assumptions and alternatives
 
